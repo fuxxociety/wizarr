@@ -23,6 +23,7 @@ dependencies = [
     "markdown>=3.8",
     "packaging>=25.0",
     "plexapi>=4.17.0",
+    "psycopg2-binary>=2.9.10",
     "python-dotenv>=1.1.0",
     "python-frontmatter>=1.1.0",
     "pyyaml>=6.0.2",

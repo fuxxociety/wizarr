@@ -114,17 +114,19 @@ class BaseConfig:
     FORCE_LANGUAGE = os.getenv("FORCE_LANGUAGE")
     # Scheduler
     SCHEDULER_API_ENABLED = True
-    # SQLAlchemy
-    SQLALCHEMY_DATABASE_URI = f"sqlite:///{DATABASE_DIR / 'database.db'}"
+    # SQLAlchemy - PostgreSQL Configuration
+    # Use DATABASE_URL from environment (docker-compose), fallback to SQLite for local dev
+    SQLALCHEMY_DATABASE_URI = os.getenv(
+        "DATABASE_URL",
+        f"sqlite:///{DATABASE_DIR / 'database.db'}"
+    )
     SQLALCHEMY_TRACK_MODIFICATIONS = False
-    # SQLite engine options for concurrent write support
+    # PostgreSQL/SQLite engine options
     SQLALCHEMY_ENGINE_OPTIONS: ClassVar[dict] = {
-        "connect_args": {
-            "timeout": 30,  # 30 second timeout for lock waits
-            "check_same_thread": False,  # Allow multi-threaded access
-        },
         "pool_pre_ping": True,  # Verify connections before using
         "pool_recycle": 3600,  # Recycle connections after 1 hour
+        "pool_size": 10,  # Connection pool size
+        "max_overflow": 20,  # Max connections beyond pool_size
     }
 
 
