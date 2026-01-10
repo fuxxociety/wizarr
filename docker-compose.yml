@@ -6,7 +6,7 @@ services:
     environment:
       POSTGRES_DB: postgres
       POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: rock-fall-death
+      POSTGRES_PASSWORD: postgres
       DOTENV_QUIET: true
     volumes:
       - pgdata:/var/lib/postgresql/data
@@ -26,7 +26,7 @@ services:
     container_name: stripe-sync
     environment:
       # PostgreSQL connection targeting the 'stripe' schema
-      DATABASE_URL: postgresql://postgres:rock-fall-death@postgres:5432/postgres?options=-c%20search_path%3Dstripe
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/postgres?options=-c%20search_path%3Dstripe
       STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY}  # Required for active sync/backfill
       STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET}  # Required for webhook validation
       API_KEY: ${STRIPE_SYNC_API_KEY:-test-key}  # API key for admin endpoints (backfilling, etc.)
@@ -46,7 +46,7 @@ services:
     container_name: wizarr
     environment:
       # Database configuration
-      DATABASE_URL: postgresql://postgres:rock-fall-death@postgres:5432/postgres
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/postgres
       # Wizarr configuration
       TZ: ${TZ:-UTC}
       FLASK_ENV: production

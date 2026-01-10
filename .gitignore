@@ -7,6 +7,9 @@
 app/static/css/main.css
 
 CLAUDE.md
+.claude/
+CLAUDE.md.old
+
 .python-version
 
 idea/
@@ -425,8 +428,6 @@ tests/test-media/**/*.mp3
 .playwright-mcp/page-2025-09-22T18-14-07-333Z.png
 .playwright-mcp/page-2025-09-22T18-15-22-951Z.png
 
-
-CLAUDE.md.old
 
 # Internal documentation (AI-generated, not for version control)
 docs-internal/

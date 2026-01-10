@@ -115,18 +115,20 @@ class BaseConfig:
     # Scheduler
     SCHEDULER_API_ENABLED = True
     # SQLAlchemy - PostgreSQL Configuration
-    # Use DATABASE_URL from environment (docker-compose), fallback to SQLite for local dev
-    SQLALCHEMY_DATABASE_URI = os.getenv(
-        "DATABASE_URL",
-        f"sqlite:///{DATABASE_DIR / 'database.db'}"
-    )
+    # DATABASE_URL must be set in environment (from docker-compose.yml)
+    SQLALCHEMY_DATABASE_URI = os.getenv("DATABASE_URL")
+    if not SQLALCHEMY_DATABASE_URI:
+        raise ValueError("DATABASE_URL environment variable must be set")
+
     SQLALCHEMY_TRACK_MODIFICATIONS = False
-    # PostgreSQL/SQLite engine options
+    # PostgreSQL connection pool options optimized for multi-worker Gunicorn
+    # With 4 workers: 4 * (5 base + 10 overflow) = up to 60 total connections
     SQLALCHEMY_ENGINE_OPTIONS: ClassVar[dict] = {
         "pool_pre_ping": True,  # Verify connections before using
         "pool_recycle": 3600,  # Recycle connections after 1 hour
-        "pool_size": 10,  # Connection pool size
-        "max_overflow": 20,  # Max connections beyond pool_size
+        "pool_size": 5,  # Connection pool size per worker (reduced for multiple workers)
+        "max_overflow": 10,  # Max connections beyond pool_size per worker
+        "pool_timeout": 30,  # Timeout waiting for connection from pool
     }
 
 

@@ -84,9 +84,6 @@ class WizardResetService:
             db.session.flush()
 
             # Expunge all objects from the session to clear the identity map
-            # This prevents SQLAlchemy identity map conflicts when creating new
-            # WizardStep objects that may reuse the same primary key IDs as the
-            # deleted objects (common in SQLite which reuses IDs)
             db.session.expunge_all()
 
             # Get default steps with the specified category

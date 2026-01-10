@@ -108,11 +108,6 @@ Plus features include:
     print("Compiling translations...")
     run_command(["uv", "run", "pybabel", "compile", "-d", "app/translations", "-f"])
 
-    print("Running database setup...")
-
-    print("Applying alembic migrations...")
-    run_command(["uv", "run", "flask", "db", "upgrade"])
-
     print("Installing/updating npm dependencies...")
     run_command(["npm", "install"], cwd=static_dir, env=npm_env)
 

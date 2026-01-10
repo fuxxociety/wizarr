@@ -143,7 +143,7 @@ def list_users_for_server(server: MediaServer):
 def delete_user(db_id: int) -> None:
     """Delete a user from its associated MediaServer and local DB.
 
-    Foreign key relationships are handled automatically by SQLite CASCADE/SET NULL:
+    Foreign key relationships are handled automatically by PostgreSQL CASCADE/SET NULL:
     - activity_session.wizarr_user_id: CASCADE (auto-deleted)
     - invitation_user.user_id: CASCADE (auto-deleted)
     - invitation.used_by_id: SET NULL (auto-cleared)
@@ -163,7 +163,7 @@ def delete_user(db_id: int) -> None:
     # Delete from companion apps
     _delete_from_companion_apps(user)
 
-    # Delete the user - SQLite handles all foreign key cascades automatically
+    # Delete the user - PostgreSQL handles all foreign key cascades automatically
     db.session.delete(user)
     db.session.commit()
 

@@ -296,16 +296,16 @@ class ActivityAnalyticsService:
                 .all()
             )
 
+            # PostgreSQL uses extract('dow', ...) for day of week
+            # Returns 0-6 where 0=Sunday
             weekday_distribution = (
                 apply_filters(
                     db.session.query(
-                        func.strftime("%w", ActivitySession.started_at).label(
-                            "weekday"
-                        ),
+                        extract("dow", ActivitySession.started_at).label("weekday"),
                         func.count(ActivitySession.id).label("count"),
                     )
                 )
-                .group_by(func.strftime("%w", ActivitySession.started_at))
+                .group_by(extract("dow", ActivitySession.started_at))
                 .all()
             )
 

@@ -16,12 +16,16 @@ errorlog = "-"  # Only errors to stderr
 workers = int(os.getenv("GUNICORN_WORKERS", "4"))
 worker_class = "sync"
 
+# Preload application code before forking workers
+# This loads the app once in master process, improving startup time and memory efficiency
+preload_app = True
+
 # Worker timeout - kill workers that don't respond within this time
 # Increase from default 30s to 120s to account for slow library scans
 timeout = int(os.getenv("GUNICORN_TIMEOUT", "120"))
 
 print(
-    f"DEBUG: Gunicorn config - workers={workers}, loglevel={loglevel}, timeout={timeout}s"
+    f"DEBUG: Gunicorn config - workers={workers}, preload_app={preload_app}, loglevel={loglevel}, timeout={timeout}s"
 )
 
 
@@ -100,6 +104,13 @@ def when_ready(server):  # noqa: ARG001
         # Complete the startup sequence
         logger.complete()
 
+        # Dispose database connections in master process before worker fork
+        # This ensures workers get fresh connections instead of inheriting master's
+        with app.app_context():
+            from app.extensions import db
+            db.engine.dispose()
+            print("DEBUG: Master process disposed DB connections before worker fork")
+
     except Exception as e:
         print(f"DEBUG: Error in when_ready(): {e}")
         import traceback
@@ -112,6 +123,15 @@ def post_worker_init(worker):
     try:
         # Set worker environment
         os.environ["GUNICORN_WORKER_PID"] = str(worker.pid)
+
+        # CRITICAL: Dispose inherited database connections from master process
+        # Each worker needs its own fresh connections to avoid sharing issues
+        import run
+        with run.app.app_context():
+            from app.extensions import db
+            db.engine.dispose()
+            print(f"DEBUG: Worker {worker.pid} disposed inherited DB connections")
+
         print(f"DEBUG: Worker {worker.pid} initialized successfully")
 
         # Suppress Flask app creation logs in workers
