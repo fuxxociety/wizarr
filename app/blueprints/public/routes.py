@@ -122,6 +122,12 @@ def join():
         if token and code:
             try:
                 handle_oauth_token(current_app, token, code)
+
+                # PostgreSQL READ COMMITTED isolation means we won't see updates from 
+                # handle_oauth_token until we refresh the invitation object from the database
+                if invitation:
+                    db.session.refresh(invitation)
+
             except PlexInvitationError as e:
                 # Show user-friendly error message from Plex API
                 name_setting = Settings.query.filter_by(key="server_name").first()
@@ -365,6 +371,10 @@ def password_prompt(code):
                 import logging
 
                 logging.error("Failed to provision user on %s: %s", srv.name, exc)
+
+        # PostgreSQL READ COMMITTED isolation means we won't see updates from
+        # mark_server_used until we refresh the invitation object from the database
+        db.session.refresh(invitation)
 
         session["wizard_access"] = code
         return redirect(url_for("wizard.start"))

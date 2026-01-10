@@ -199,6 +199,12 @@ class InvitationWorkflow(ABC):
         failed: list[ServerResult],
     ) -> InvitationResult:
         """Create success result with wizard redirect."""
+        # PostgreSQL READ COMMITTED isolation means we won't see updates from
+        # mark_server_used (called in _process_servers) until we refresh
+        from app.extensions import db
+
+        db.session.refresh(invitation)
+
         invitation_code = invitation.code
         session["wizard_access"] = invitation_code
         bundle_id = getattr(invitation, "wizard_bundle_id", None)
