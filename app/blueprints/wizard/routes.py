@@ -629,6 +629,17 @@ def pre_wizard(idx: int = 0):
         InviteCodeManager.mark_pre_wizard_complete()
         return redirect(url_for("public.invite", code=invite_code))
 
+    # Inject Stripe payment step if invitation requires payment
+    if invitation.requires_payment and not invitation.payment_completed:
+        import frontmatter
+
+        # Create a stripe payment step
+        stripe_step_content = """{{ widget:stripe_payment }}"""
+        stripe_step = frontmatter.Post(stripe_step_content, {"title": _("Payment Required")})
+
+        # Prepend the stripe step to the beginning of the steps
+        steps = [stripe_step] + steps
+
     if not steps:
         # No pre-invite steps, mark as complete and redirect to join
         InviteCodeManager.mark_pre_wizard_complete()
@@ -1432,3 +1443,214 @@ def bundle_preview(bundle_id: int, idx: int):
         return resp
 
     return response
+
+
+@wizard_bp.route("/get-payment-intent", methods=["POST"])
+def get_payment_intent():
+    """Create a Stripe Payment Intent for embedded form checkout."""
+    from flask import jsonify
+    import stripe
+    from app.services.stripe_service import StripeService
+    from decimal import Decimal
+
+    try:
+        data = request.get_json()
+        invitation_code = data.get("invitation_code")
+
+        if not invitation_code:
+            return jsonify({"error": "Invitation code required"}), 400
+
+        # Validate invitation
+        is_valid, invitation = InviteCodeManager.validate_invite_code(invitation_code)
+        if not is_valid or not invitation:
+            return jsonify({"error": "Invalid invitation code"}), 400
+
+        # Ensure Stripe is configured
+        if not StripeService.is_configured():
+            return jsonify({"error": "Stripe not configured"}), 503
+
+        # Get pricing from settings (amount in cents)
+        settings_dict = {s.key: s.value for s in Settings.query.all()}
+        payment_amount = settings_dict.get("payment_amount", "9999")  # Default $99.99
+        try:
+            payment_amount_cents = int(payment_amount)
+        except (ValueError, TypeError):
+            payment_amount_cents = 9999
+
+        # Create Payment Intent for embedded form
+        payment_intent = stripe.PaymentIntent.create(
+            amount=payment_amount_cents,
+            currency="usd",
+            metadata={
+                "invitation_code": invitation_code,
+                "invitation_id": str(invitation.id),
+            },
+            description=f"Payment for invitation {invitation_code}"
+        )
+
+        # Store in session for verification
+        session["stripe_payment_intent_id"] = payment_intent.id
+        session["stripe_payment_invitation_code"] = invitation_code
+
+        return jsonify({
+            "client_secret": payment_intent.client_secret,
+            "payment_intent_id": payment_intent.id
+        }), 200
+
+    except stripe.error.StripeError as e:
+        current_app.logger.error(f"Stripe error creating payment intent: {e}")
+        return jsonify({"error": "Payment service error"}), 500
+    except Exception as e:
+        current_app.logger.error(f"Error creating payment intent: {e}")
+        return jsonify({"error": "Internal server error"}), 500
+
+
+@wizard_bp.route("/payment-complete", methods=["GET", "POST"])
+def payment_complete():
+    """Handle successful payment from embedded form."""
+    from flask import jsonify
+    import stripe
+
+    try:
+        # Get payment intent from query string or body
+        payment_intent_id = request.args.get("payment_intent") or (
+            request.get_json().get("payment_intent") if request.is_json else None
+        )
+        invitation_code = session.get("stripe_payment_invitation_code")
+
+        if not payment_intent_id or not invitation_code:
+            if request.is_json:
+                return jsonify({"error": "Payment intent not found"}), 400
+            flash(_("Payment session not found"), "error")
+            return redirect(url_for("wizard.post_wizard"))
+
+        # Verify payment intent was successful
+        payment_intent = stripe.PaymentIntent.retrieve(payment_intent_id)
+
+        if payment_intent.status != "succeeded":
+            error_msg = _("Payment was not completed successfully")
+            if request.is_json:
+                return jsonify({"error": error_msg}), 400
+            flash(error_msg, "error")
+            return redirect(url_for("wizard.post_wizard"))
+
+        # Mark invitation as paid
+        invitation = Invitation.query.filter_by(invite_code=invitation_code).first()
+        if invitation:
+            invitation.payment_completed = True
+            from datetime import datetime, UTC
+            invitation.payment_completed_at = datetime.now(UTC)
+            db.session.commit()
+
+        # Clean up session
+        session.pop("stripe_payment_intent_id", None)
+        session.pop("stripe_payment_invitation_code", None)
+
+        if request.is_json:
+            return jsonify({
+                "success": True,
+                "message": _("Payment successful")
+            }), 200
+
+        flash(_("Payment successful! Continuing setup..."), "success")
+        return redirect(url_for("wizard.post_wizard"))
+
+    except stripe.error.StripeError as e:
+        current_app.logger.error(f"Stripe error verifying payment: {e}")
+        error_msg = _("Payment verification failed")
+        if request.is_json:
+            return jsonify({"error": error_msg}), 500
+        flash(error_msg, "error")
+        return redirect(url_for("wizard.post_wizard"))
+    except Exception as e:
+        current_app.logger.error(f"Error completing payment: {e}")
+        error_msg = _("Payment processing error")
+        if request.is_json:
+            return jsonify({"error": error_msg}), 500
+        flash(error_msg, "error")
+        return redirect(url_for("wizard.post_wizard"))
+
+
+@wizard_bp.route("/create-checkout-session", methods=["POST"])
+def create_checkout_session():
+    """Legacy endpoint - create a Stripe Checkout session for payment during wizard flow."""
+    from flask import jsonify
+    import stripe
+    from app.services.stripe_service import StripeService
+    from datetime import datetime, UTC
+
+    try:
+        data = request.get_json()
+        price_id = data.get("price_id")
+        invitation_code = data.get("invitation_code")
+
+        if not price_id:
+            return jsonify({"error": "Price ID required"}), 400
+
+        if not invitation_code:
+            return jsonify({"error": "Invitation code required"}), 400
+
+        # Validate invitation
+        is_valid, invitation = InviteCodeManager.validate_invite_code(invitation_code)
+        if not is_valid or not invitation:
+            return jsonify({"error": "Invalid invitation code"}), 400
+
+        # Ensure Stripe is configured
+        if not StripeService.is_configured():
+            return jsonify({"error": "Stripe not configured"}), 503
+
+        # Get app settings for URLs
+        settings_dict = {s.key: s.value for s in Settings.query.all()}
+        external_url = settings_dict.get("external_url", request.host_url.rstrip("/"))
+
+        # Create checkout session
+        checkout_session = stripe.checkout.Session.create(
+            payment_method_types=["card"],
+            line_items=[{
+                "price": price_id,
+                "quantity": 1,
+            }],
+            mode="subscription",
+            success_url=f"{external_url}/wizard/payment-success?session_id={{CHECKOUT_SESSION_ID}}",
+            cancel_url=f"{external_url}/wizard/payment-cancelled",
+            client_reference_id=invitation_code,  # Link session to invitation
+            metadata={
+                "invitation_code": invitation_code,
+                "invitation_id": str(invitation.id),
+            }
+        )
+
+        # Store checkout session ID temporarily
+        session["stripe_checkout_session_id"] = checkout_session.id
+        session["stripe_checkout_invitation_code"] = invitation_code
+
+        return jsonify({"url": checkout_session.url}), 200
+
+    except stripe.error.StripeError as e:
+        current_app.logger.error(f"Stripe error creating checkout session: {e}")
+        return jsonify({"error": "Payment service error"}), 500
+    except Exception as e:
+        current_app.logger.error(f"Error creating checkout session: {e}")
+        return jsonify({"error": "Internal server error"}), 500
+
+
+@wizard_bp.route("/payment-success")
+def payment_success():
+    """Handle successful payment redirect from Stripe (legacy checkout sessions)."""
+    checkout_session_id = request.args.get("session_id")
+    invitation_code = session.get("stripe_checkout_invitation_code")
+
+    if not checkout_session_id or not invitation_code:
+        flash(_("Payment session not found"), "error")
+        return redirect(url_for("wizard.post_wizard"))
+
+    # Show success message and continue wizard
+    flash(_("Payment successful! Continuing setup..."), "success")
+    return redirect(url_for("wizard.post_wizard"))
+
+
+@wizard_bp.route("/payment-cancelled")
+def payment_cancelled():
+    """Handle cancelled payment from Stripe."""
+    flash(_("Payment was cancelled. Please try again if you wish to subscribe."), "warning")
+    return redirect(url_for("wizard.post_wizard"))

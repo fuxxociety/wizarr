@@ -7,7 +7,7 @@ from typing import ClassVar
 
 from dotenv import load_dotenv
 
-from app.utils.session_cache import RobustFileSystemCache
+from app.extensions import db
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 load_dotenv(BASE_DIR / ".env")
@@ -17,19 +17,11 @@ load_dotenv(BASE_DIR / ".env")
 # Ensure database directory exists
 # Use /data/database for container deployments, fall back to local for development
 
-
 if Path("/data").exists():
     DATABASE_DIR = Path("/data/database")
 else:
     DATABASE_DIR = BASE_DIR / "database"
 DATABASE_DIR.mkdir(exist_ok=True)
-
-SESSION_CACHELIB = RobustFileSystemCache(
-    str(DATABASE_DIR / "sessions"),
-    threshold=1000,  # Max files before cleanup
-    default_timeout=86400,  # 24 hours
-    mode=0o600,  # Restrict file permissions
-)
 
 # Define secrets file location next to database
 SECRETS_FILE = DATABASE_DIR / "secrets.json"
@@ -77,9 +69,10 @@ class BaseConfig:
     TEMPLATES_AUTO_RELOAD = True
     SECRET_KEY = get_or_create_secret("SECRET_KEY", generate_secret_key)
     # Sessions
-    SESSION_TYPE = "cachelib"  # Changed from 'filesystem' to 'cachelib'
-    SESSION_CACHELIB = SESSION_CACHELIB  # Reference the module-level cache
-
+    SESSION_TYPE = "sqlalchemy"  # Changed from 'filesystem' to 'cachelib' to 'sqlalchemy'
+    SESSION_SQLALCHEMY = db
+    SESSION_PERMANENT = True
+    PERMANENT_SESSION_LIFETIME = 86400  # cachelib used a default 24h timeout
     # Babel / i18n
     LANGUAGES: ClassVar[dict[str, str]] = {
         "en": "English",

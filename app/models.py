@@ -143,6 +143,13 @@ class Invitation(db.Model):
     # Jellyfin options
     max_active_sessions = db.Column(db.Integer, nullable=True)  # 0 = unlimited/infinity
 
+    # Stripe payment integration
+    requires_payment = db.Column(db.Boolean, default=False, nullable=True)
+    stripe_customer_id = db.Column(db.String, nullable=True)
+    stripe_subscription_id = db.Column(db.String, nullable=True)
+    payment_completed = db.Column(db.Boolean, default=False, nullable=True)
+    payment_completed_at = db.Column(db.DateTime, nullable=True)
+
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
 
@@ -163,6 +170,19 @@ class Invitation(db.Model):
     def has_user(self, user):
         """Check if a specific user has used this invitation."""
         return user in list(self.users)
+
+    # Stripe payment helper methods
+    def is_payment_required(self):
+        """Check if this invitation requires payment."""
+        return bool(self.requires_payment)
+
+    def is_payment_complete(self):
+        """Check if payment has been completed for this invitation."""
+        return bool(self.payment_completed)
+
+    def can_proceed_without_payment(self):
+        """Check if user can proceed through wizard without payment."""
+        return not self.requires_payment or self.payment_completed
 
 
 class Settings(db.Model):
@@ -1079,3 +1099,133 @@ class ActivitySnapshot(db.Model):
             "position_minutes": self.position_minutes,
             "created_at": self.created_at.isoformat() if self.created_at else None,
         }
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Subscription Tier Management (2026-01)
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+class SubscriptionTier(db.Model):
+    """Represents a subscription tier level (e.g., Base, 4K, Premium)."""
+
+    __tablename__ = "subscription_tier"
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(255), nullable=False, unique=True)
+    description = db.Column(db.Text, nullable=True)
+    tier_level = db.Column(db.Integer, nullable=False, unique=True)
+    stripe_product_id = db.Column(db.String(255), nullable=True)
+    parent_tier_id = db.Column(
+        db.Integer, db.ForeignKey("subscription_tier.id", ondelete="SET NULL"), nullable=True
+    )
+    parent_tier = db.relationship(
+        "SubscriptionTier",
+        remote_side=[id],
+        backref=db.backref("child_tiers", lazy=True),
+        foreign_keys=[parent_tier_id],
+    )
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(UTC), nullable=False)
+    updated_at = db.Column(
+        db.DateTime,
+        default=lambda: datetime.now(UTC),
+        onupdate=lambda: datetime.now(UTC),
+        nullable=False,
+    )
+
+    # Relationships
+    entitlements = db.relationship(
+        "TierEntitlement",
+        backref=db.backref("tier", lazy=True),
+        lazy=True,
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
+    subscriptions = db.relationship(
+        "UserSubscription",
+        backref=db.backref("tier", lazy=True),
+        lazy=True,
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
+
+    def get_all_entitlements(self):
+        """Get all entitlements for this tier including inherited ones."""
+        entitlements = list(self.entitlements)
+        if self.parent_tier:
+            entitlements.extend(self.parent_tier.get_all_entitlements())
+        return entitlements
+
+    def __repr__(self):
+        return f"<SubscriptionTier {self.name} (Level {self.tier_level})>"
+
+
+class TierEntitlement(db.Model):
+    """Represents what a subscription tier entitles (e.g., access to specific libraries)."""
+
+    __tablename__ = "tier_entitlement"
+    id = db.Column(db.Integer, primary_key=True)
+    tier_id = db.Column(
+        db.Integer,
+        db.ForeignKey("subscription_tier.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    resource_type = db.Column(
+        db.String(50), nullable=False
+    )  # e.g., 'plex_library', 'emby_library', 'feature'
+    resource_id = db.Column(
+        db.String(255), nullable=False
+    )  # e.g., library_key, collection_id, feature_name
+    is_tier_exclusive = db.Column(
+        db.Boolean, default=False, nullable=False
+    )  # True if only available at this tier
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(UTC), nullable=False)
+
+    def __repr__(self):
+        return f"<TierEntitlement {self.resource_type}:{self.resource_id} on Tier {self.tier_id}>"
+
+
+class UserSubscription(db.Model):
+    """Represents an active subscription for a user."""
+
+    __tablename__ = "user_subscription"
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(
+        db.Integer,
+        db.ForeignKey("user.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    user = db.relationship(
+        "User",
+        backref=db.backref("subscriptions", lazy=True, cascade="all, delete-orphan"),
+        foreign_keys=[user_id],
+    )
+    tier_id = db.Column(
+        db.Integer,
+        db.ForeignKey("subscription_tier.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    stripe_subscription_id = db.Column(db.String(255), nullable=True)
+    active_from = db.Column(db.DateTime, default=lambda: datetime.now(UTC), nullable=False)
+    active_until = db.Column(db.DateTime, nullable=True)
+    status = db.Column(
+        db.String(50), default="active", nullable=False
+    )  # 'active', 'cancelled', 'expired', 'suspended'
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(UTC), nullable=False)
+    updated_at = db.Column(
+        db.DateTime,
+        default=lambda: datetime.now(UTC),
+        onupdate=lambda: datetime.now(UTC),
+        nullable=False,
+    )
+
+    def is_active(self):
+        """Check if subscription is currently active."""
+        now = datetime.now(UTC)
+        if self.status != "active":
+            return False
+        if self.active_until and now > self.active_until:
+            return False
+        return True
+
+    def __repr__(self):
+        return f"<UserSubscription User {self.user_id} - Tier {self.tier_id} ({self.status})>"

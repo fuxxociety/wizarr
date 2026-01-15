@@ -18,7 +18,10 @@ from .plex.routes import plex_bp
 from .public.routes import public_bp
 from .settings.routes import settings_bp
 from .setup.routes import setup_bp
+from .stripe_settings.routes import stripe_settings_bp
+from .subscription_tier.routes import subscription_tier_bp
 from .webauthn.routes import webauthn_bp
+from .webhooks.routes import webhooks_bp
 from .wizard.routes import wizard_bp
 from .wizard_admin.routes import wizard_admin_bp
 
@@ -33,6 +36,9 @@ all_blueprints = (
     activity_bp,
     auth_bp,
     settings_bp,
+    stripe_settings_bp,
+    subscription_tier_bp,
+    webhooks_bp,
     connections_bp,
     setup_bp,
     plex_bp,

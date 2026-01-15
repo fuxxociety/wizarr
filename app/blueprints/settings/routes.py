@@ -351,3 +351,4 @@ def clean_expired_users():
             ),
             label=_("Clean Expired Users"),
         )
+

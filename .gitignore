@@ -1,5 +1,5 @@
-
 # .gitignore
+.gitignore
 *.mo
 *.pot   # keep this out too; we generate it automatically
 

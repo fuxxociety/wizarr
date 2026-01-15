@@ -1,0 +1,20 @@
+{
+  "files.eol": "\n",
+  "files.insertFinalNewline": true,
+  "files.trimTrailingWhitespace": true,
+  "[python]": {
+    "files.eol": "\n"
+  },
+  "[shellscript]": {
+    "files.eol": "\n"
+  },
+  "[dockerfile]": {
+    "files.eol": "\n"
+  },
+  "[yaml]": {
+    "files.eol": "\n"
+  },
+  "[json]": {
+    "files.eol": "\n"
+  }
+}

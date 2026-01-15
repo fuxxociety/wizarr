@@ -14,6 +14,20 @@
     </span>
   {% endif %}
 {%- endmacro %}
+
+{% macro payment_badge(invite) -%}
+  {% if invite.requires_payment %}
+    {% if invite.is_payment_complete() %}
+      <span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900/20 dark:text-green-400">
+        {{ _("Payment Complete") }}
+      </span>
+    {% else %}
+      <span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800 dark:bg-blue-900/20 dark:text-blue-400">
+        {{ _("Payment Required") }}
+      </span>
+    {% endif %}
+  {% endif %}
+{%- endmacro %}
 <div id="invite_table"
      class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 animate__animated">
   {% if not invitations %}
@@ -160,7 +174,7 @@
             <!-- Status & Actions -->
             <div class="flex items-center justify-between mt-auto pt-4"
                  onclick="event.stopPropagation()">
-              <div class="flex items-center space-x-2">{{ relative_expiry_badge(invite) }}</div>
+              <div class="flex items-center space-x-2">{{ relative_expiry_badge(invite) }}{{ payment_badge(invite) }}</div>
               <div class="flex items-center space-x-2">
                 <!-- Copy link button -->
                 <button class="h-8 w-8 p-0 inline-flex items-center justify-center text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300 rounded-md hover:bg-gray-100/50 dark:hover:bg-gray-700/50 transition-colors"

@@ -51,6 +51,7 @@ api.authorizations = {
 def init_extensions(app):
     """Initialize Flask extensions with clean separation of concerns."""
     # Core extensions initialization
+    db.init_app(app)
     sess.init_app(app)
     babel.init_app(app, locale_selector=_select_locale)
 
@@ -95,6 +96,19 @@ def init_extensions(app):
             replace_existing=True,
         )
 
+        # Add Stripe backfill task - always scheduled, but exits early if not enabled
+        # The task itself checks if Stripe is configured before running
+        from app.tasks.stripe_sync import stripe_backfill
+
+        scheduler.add_job(
+            id="stripe_backfill",
+            func=lambda: stripe_backfill(app),
+            trigger="interval",
+            minutes=1,  # Run every minute
+            replace_existing=True,
+        )
+        app.logger.info("Stripe backfill task scheduled (every 1 minute)")
+
         # Start the scheduler - Flask-APScheduler handles Gunicorn coordination
         try:
             if not scheduler.running:
@@ -109,7 +123,6 @@ def init_extensions(app):
     htmx.init_app(app)
     login_manager.init_app(app)
     login_manager.login_view = "auth.login"  # type: ignore[assignment]
-    db.init_app(app)
 
     limiter.init_app(app)
     # Flask-RESTX API will be initialized with the blueprint

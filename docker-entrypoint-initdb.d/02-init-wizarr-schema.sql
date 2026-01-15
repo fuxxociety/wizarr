@@ -16,6 +16,14 @@ SET client_min_messages = WARNING;
 -- Core Tables
 -- =========================================================================
 
+-- Sessions table
+CREATE TABLE sessions (
+    id SERIAL PRIMARY KEY,
+    session_id VARCHAR(255) UNIQUE NOT NULL,
+    data BYTEA NOT NULL,
+    expiry TIMESTAMP
+);
+
 -- Settings table - Key-value configuration storage
 CREATE TABLE IF NOT EXISTS settings (
     id SERIAL PRIMARY KEY,
@@ -217,11 +225,16 @@ CREATE TABLE IF NOT EXISTS invitation (
     plex_home BOOLEAN,
     plex_allow_channels BOOLEAN,
     server_id INTEGER,
-    wizard_bundle_id INTEGER,
     allow_downloads BOOLEAN,
     allow_live_tv BOOLEAN,
     allow_mobile_uploads BOOLEAN,
+    wizard_bundle_id INTEGER,
     max_active_sessions INTEGER,
+    requires_payment BOOLEAN NULL DEFAULT FALSE,
+    stripe_customer_id VARCHAR NULL,
+    stripe_subscription_id VARCHAR NULL,
+    payment_completed BOOLEAN NULL DEFAULT FALSE,
+    payment_completed_at TIMESTAMP WITH TIME ZONE NULL,
     FOREIGN KEY (used_by_id) REFERENCES "user"(id) ON DELETE SET NULL,
     FOREIGN KEY (server_id) REFERENCES media_server(id) ON DELETE SET NULL,
     FOREIGN KEY (wizard_bundle_id) REFERENCES wizard_bundle(id) ON DELETE SET NULL

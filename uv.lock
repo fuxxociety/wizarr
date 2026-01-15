@@ -1396,6 +1396,19 @@ wheels = [
 ]
 
 [[package]]
+name = "stripe"
+version = "14.1.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "requests" },
+    { name = "typing-extensions" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/74/db/274e7d6d8a657a6a73ba9306e1e970205a44c6bb2707692a1d67e2ad5458/stripe-14.1.0.tar.gz", hash = "sha256:d002ecd2966a984a52a43e865bc9346c389f20e768e13fdbbe9cb9474f917c23", size = 1449934, upload-time = "2025-12-16T19:54:41.317Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/1a/e6/7202dcb3a0f99e4d1325ccd1000cde86aa6aaa5248ecafbd8c5dca26f70d/stripe-14.1.0-py3-none-any.whl", hash = "sha256:0e687a2eed4d9a66e7602093f7ad02e6c30a0d0c993101848a8c97d7f7607748", size = 2074806, upload-time = "2025-12-16T19:54:39.862Z" },
+]
+
+[[package]]
 name = "structlog"
 version = "25.5.0"
 source = { registry = "https://pypi.org/simple" }
@@ -1595,6 +1608,7 @@ dependencies = [
     { name = "requests" },
     { name = "setuptools" },
     { name = "sqlalchemy" },
+    { name = "stripe" },
     { name = "structlog" },
     { name = "webauthn" },
     { name = "websocket-client" },
@@ -1643,6 +1657,7 @@ requires-dist = [
     { name = "requests", specifier = ">=2.32.3" },
     { name = "setuptools", specifier = ">=65.5.1" },
     { name = "sqlalchemy", specifier = ">=2.0.41" },
+    { name = "stripe", specifier = ">=11.0.0" },
     { name = "structlog", specifier = ">=25.4.0" },
     { name = "webauthn", specifier = ">=2.0.0" },
     { name = "websocket-client", specifier = ">=1.8.0" },

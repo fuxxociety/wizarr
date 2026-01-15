@@ -3,12 +3,20 @@ import logging
 import os
 import sys
 
-# Add immediate debug to check if config is loaded
-print("DEBUG: gunicorn.conf.py loaded!")
+# Use unified LOG_LEVEL for all logging (Python, Gunicorn, and debug prints)
+# Valid values: DEBUG, INFO, WARNING, ERROR, CRITICAL (case insensitive)
+LOG_LEVEL = os.getenv("LOG_LEVEL", "WARNING").upper()
 
-# Make log level configurable for debugging production issues
-# Set GUNICORN_LOG_LEVEL=info or debug for verbose output
-loglevel = os.getenv("GUNICORN_LOG_LEVEL", "warning").lower()
+def debug_print(msg):
+    """Print debug messages only when LOG_LEVEL is DEBUG."""
+    if LOG_LEVEL == "DEBUG":
+        print(f"DEBUG: {msg}")
+
+# Add immediate debug to check if config is loaded
+debug_print("gunicorn.conf.py loaded!")
+
+# Use the same LOG_LEVEL for gunicorn logging
+loglevel = LOG_LEVEL.lower()
 accesslog = None  # Disable access logs for clean output
 errorlog = "-"  # Only errors to stderr
 
@@ -24,30 +32,30 @@ preload_app = True
 # Increase from default 30s to 120s to account for slow library scans
 timeout = int(os.getenv("GUNICORN_TIMEOUT", "120"))
 
-print(
-    f"DEBUG: Gunicorn config - workers={workers}, preload_app={preload_app}, loglevel={loglevel}, timeout={timeout}s"
+debug_print(
+    f"Gunicorn config - workers={workers}, preload_app={preload_app}, loglevel={loglevel}, timeout={timeout}s"
 )
 
 
 def on_starting(server):  # noqa: ARG001
     """Called just before the master process is initialized."""
-    print("DEBUG: on_starting() hook called!")
+    debug_print("on_starting() hook called!")
 
 
 def when_ready(server):  # noqa: ARG001
     """Called after the server is started."""
     try:
-        print("DEBUG: when_ready() hook called!")
+        debug_print("when_ready() hook called!")
 
         # Set environment to indicate Gunicorn context
         os.environ["SERVER_SOFTWARE"] = "gunicorn"
 
         # Only run migrations if we haven't already done so
         if os.getenv("WIZARR_MIGRATIONS_DONE"):
-            print("DEBUG: Migrations already done, skipping")
+            debug_print("Migrations already done, skipping")
             return
 
-        print("DEBUG: Setting WIZARR_MIGRATIONS_DONE flag")
+        debug_print("Setting WIZARR_MIGRATIONS_DONE flag")
         os.environ["WIZARR_MIGRATIONS_DONE"] = "1"
 
         # Import here to avoid circular imports
@@ -81,11 +89,11 @@ def when_ready(server):  # noqa: ARG001
             # Check Flask-APScheduler status - it handles Gunicorn coordination automatically
             from app.extensions import scheduler
 
-            print("DEBUG: Checking Flask-APScheduler status...")
+            debug_print("Checking Flask-APScheduler status...")
 
             if scheduler and hasattr(scheduler, "scheduler") and scheduler.scheduler:
                 if scheduler.running:
-                    print("DEBUG: Flask-APScheduler is running")
+                    debug_print("Flask-APScheduler is running")
                     dev_mode = os.getenv(
                         "WIZARR_ENABLE_SCHEDULER", "false"
                     ).lower() in (
@@ -95,10 +103,10 @@ def when_ready(server):  # noqa: ARG001
                     )
                     logger.scheduler_status(enabled=True, dev_mode=dev_mode)
                 else:
-                    print("DEBUG: Flask-APScheduler exists but not running")
+                    debug_print("Flask-APScheduler exists but not running")
                     logger.warning("Scheduler initialized but not running")
             else:
-                print("DEBUG: Flask-APScheduler not available")
+                debug_print("Flask-APScheduler not available")
                 logger.info("Scheduler disabled or not initialized")
 
         # Complete the startup sequence
@@ -109,10 +117,10 @@ def when_ready(server):  # noqa: ARG001
         with app.app_context():
             from app.extensions import db
             db.engine.dispose()
-            print("DEBUG: Master process disposed DB connections before worker fork")
+            debug_print("Master process disposed DB connections before worker fork")
 
     except Exception as e:
-        print(f"DEBUG: Error in when_ready(): {e}")
+        debug_print(f"Error in when_ready(): {e}")
         import traceback
 
         traceback.print_exc()
@@ -130,9 +138,21 @@ def post_worker_init(worker):
         with run.app.app_context():
             from app.extensions import db
             db.engine.dispose()
-            print(f"DEBUG: Worker {worker.pid} disposed inherited DB connections")
+            debug_print(f"Worker {worker.pid} disposed inherited DB connections")
 
-        print(f"DEBUG: Worker {worker.pid} initialized successfully")
+        # Initialize Stripe service for this worker
+        # Class state doesn't persist across processes, so each worker needs its own instance
+        try:
+            from app.services.stripe_service import StripeService
+            if StripeService.initialize(run.app):
+                debug_print(f"Worker {worker.pid} initialized Stripe service")
+            else:
+                debug_print(f"Worker {worker.pid} - Stripe service not configured")
+        except Exception as stripe_exc:
+            if LOG_LEVEL == "DEBUG":
+                print(f"WARNING: Worker {worker.pid} failed to initialize Stripe: {stripe_exc}")
+
+        debug_print(f"Worker {worker.pid} initialized successfully")
 
         # Suppress Flask app creation logs in workers
         logging.getLogger("werkzeug").setLevel(logging.ERROR)

@@ -288,10 +288,322 @@ class ButtonWidget(WizardWidget):
             return f'\n\n<div class="text-sm text-gray-500 italic">Button widget error: {e}</div>\n\n'
 
 
+class StripePaymentWidget(WizardWidget):
+    """Widget to display Stripe Checkout Embedded Form for payment during wizard."""
+
+    def __init__(self):
+        template = """
+        <div class="stripe-payment-widget my-6">
+            {% if stripe_configured %}
+                <div class="space-y-4">
+                    <!-- Debug info (remove after testing) -->
+                    <div class="text-xs text-gray-500 bg-gray-100 p-2 rounded hidden">
+                        PublicKey: {{ stripe_public_key[:10] if stripe_public_key else 'EMPTY' }}...
+                        Code: {{ invitation_code[:10] if invitation_code else 'EMPTY' }}...
+                        Endpoint: {{ get_payment_intent_url }}
+                    </div>
+
+                    <!-- Stripe Checkout Embedded Form Container -->
+                    <div id="checkout-element-container" class="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-6">
+                        <!-- Embedded form will be loaded here -->
+                    </div>
+
+                    <!-- Payment Status Messages -->
+                    <div id="payment-message" class="mt-4 hidden">
+                        <div id="payment-status-content"></div>
+                    </div>
+
+                    <!-- Error Messages -->
+                    <div id="payment-error" class="mt-4 hidden">
+                        <div class="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4">
+                            <p id="error-message" class="text-red-800 dark:text-red-200 text-sm"></p>
+                        </div>
+                    </div>
+
+                    <!-- Loading State -->
+                    <div id="payment-loading" class="mt-4 hidden">
+                        <div class="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
+                            <div class="flex items-center">
+                                <svg class="animate-spin h-5 w-5 text-blue-600 dark:text-blue-400 mr-3" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                </svg>
+                                <span class="text-blue-800 dark:text-blue-200">{{ _("Processing your payment...") }}</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <script src="https://js.stripe.com/v3/"></script>
+                <script>
+                console.log('Stripe Payment Widget Script Starting');
+                console.log('Public Key:', '{{ stripe_public_key }}' ? '{{ stripe_public_key }}'.substring(0, 10) + '...' : 'EMPTY');
+                console.log('Invitation Code:', '{{ invitation_code }}' ? '{{ invitation_code }}'.substring(0, 10) + '...' : 'EMPTY');
+                console.log('Intent Endpoint:', '{{ get_payment_intent_url }}');
+
+                // Initialize Stripe
+                const stripe = Stripe('{{ stripe_public_key }}');
+                let elements = null;
+                let paymentElement = null;
+
+                async function initializeCheckout() {
+                    try {
+                        console.log('initializeCheckout called');
+
+                        // Fetch client secret from backend
+                        const response = await fetch('{{ get_payment_intent_url }}', {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                            },
+                            body: JSON.stringify({
+                                invitation_code: '{{ invitation_code }}'
+                            })
+                        });
+
+                        console.log('Fetch response:', response.status, response.ok);
+
+                        if (!response.ok) {
+                            const errorData = await response.text();
+                            console.error('API Error:', errorData);
+                            throw new Error('Failed to initialize payment');
+                        }
+
+                        const data = await response.json();
+                        console.log('API Response:', data);
+
+                        const clientSecret = data.client_secret;
+
+                        if (!clientSecret) {
+                            console.error('No client secret in response');
+                            throw new Error('No client secret received');
+                        }
+
+                        console.log('Creating elements with clientSecret:', clientSecret.substring(0, 20) + '...');
+
+                        // Create Elements instance
+                        elements = stripe.elements({
+                            clientSecret: clientSecret,
+                            appearance: {
+                                theme: document.documentElement.classList.contains('dark') ? 'night' : 'stripe',
+                                variables: {
+                                    colorPrimary: 'var(--color-primary, #3b82f6)',
+                                    colorBackground: document.documentElement.classList.contains('dark') ? '#1f2937' : '#ffffff',
+                                    colorText: document.documentElement.classList.contains('dark') ? '#f3f4f6' : '#1f2937',
+                                    fontFamily: 'system-ui, -apple-system, sans-serif'
+                                }
+                            }
+                        });
+
+                        console.log('Elements created, creating payment element');
+
+                        // Mount Payment Element
+                        paymentElement = elements.create('payment');
+                        paymentElement.mount('#checkout-element-container');
+
+                        console.log('Payment element mounted');
+
+                        // Create payment form
+                        const form = document.createElement('form');
+                        form.id = 'payment-form';
+                        form.className = 'mt-6';
+                        form.innerHTML = `
+                            <button type="submit" class="w-full px-4 py-3 bg-primary hover:bg-primary-hover text-white font-medium rounded-lg transition-colors">
+                                {{ _("Complete Payment") }}
+                            </button>
+                        `;
+
+                        const container = document.getElementById('checkout-element-container');
+                        container.parentElement.insertBefore(form, container.nextSibling);
+
+                        // Handle form submission
+                        form.addEventListener('submit', handleSubmit);
+                        console.log('Form listener attached');
+
+                    } catch (error) {
+                        console.error('Checkout initialization error:', error);
+                        showError(error.message || '{{ _("Payment initialization failed") }}');
+                    }
+                }
+
+                async function handleSubmit(e) {
+                    e.preventDefault();
+                    console.log('Form submitted');
+
+                    if (!elements) {
+                        showError('{{ _("Payment form not initialized") }}');
+                        return;
+                    }
+
+                    showLoading(true);
+
+                    try {
+                        // Confirm payment with Stripe
+                        console.log('Confirming payment...');
+                        const { error: submitError } = await stripe.confirmPayment({
+                            elements: elements,
+                            confirmParams: {
+                                return_url: '{{ payment_return_url }}'
+                            }
+                        });
+
+                        if (submitError) {
+                            console.error('Submit error:', submitError);
+                            showError(submitError.message);
+                            showLoading(false);
+                        } else {
+                            console.log('Payment confirmed, redirecting...');
+                        }
+                        // If no error, stripe will redirect to return_url
+                    } catch (error) {
+                        console.error('Payment submission error:', error);
+                        showError(error.message || '{{ _("Payment processing failed") }}');
+                        showLoading(false);
+                    }
+                }
+
+                function showError(message) {
+                    console.log('Showing error:', message);
+                    const errorDiv = document.getElementById('payment-error');
+                    const errorMessage = document.getElementById('error-message');
+                    errorMessage.textContent = message;
+                    errorDiv.classList.remove('hidden');
+                    document.getElementById('payment-message').classList.add('hidden');
+                }
+
+                function showLoading(show) {
+                    console.log('Setting loading state:', show);
+                    document.getElementById('payment-loading').classList.toggle('hidden', !show);
+                    const submitButton = document.getElementById('payment-form')?.querySelector('button');
+                    if (submitButton) {
+                        submitButton.disabled = show;
+                    }
+                }
+
+                // Initialize when page loads
+                console.log('Adding DOMContentLoaded listener');
+                document.addEventListener('DOMContentLoaded', initializeCheckout);
+
+                // Also try to initialize immediately in case DOM is already loaded
+                if (document.readyState === 'loading') {
+                    console.log('DOM still loading');
+                } else {
+                    console.log('DOM already loaded, initializing immediately');
+                    initializeCheckout();
+                }
+            {% else %}
+            <div class="text-center py-8 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
+                <svg class="w-12 h-12 mx-auto mb-2 text-red-400" fill="currentColor" viewBox="0 0 20 20">
+                    <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clip-rule="evenodd"/>
+                </svg>
+                <p class="text-red-600 dark:text-red-200 font-medium">{{ error_message or _("Stripe not configured") }}</p>
+                <p class="text-sm text-red-500 dark:text-red-300 mt-2">{{ _("Please contact support") }}</p>
+            </div>
+            {% endif %}
+        </div>
+        """
+        super().__init__("stripe_payment", template)
+
+    def get_data(self, _server_type: str, **kwargs) -> dict[str, Any]:
+        """Fetch Stripe configuration for Checkout Embedded Form."""
+        from flask import has_request_context, url_for, session
+        from app.models import Settings
+        import logging
+
+        try:
+            # Check if Stripe is configured
+            settings_dict = {s.key: s.value for s in Settings.query.all()}
+            stripe_connected = settings_dict.get("stripe_connected") in ["True", "true", "1", True]
+
+            if not stripe_connected:
+                logging.warning("Stripe not connected in get_data")
+                return {
+                    "stripe_configured": False,
+                    "stripe_public_key": "",
+                    "get_payment_intent_url": "",
+                    "payment_return_url": "",
+                    "invitation_code": "",
+                    "error_message": "Stripe is not connected"
+                }
+
+            # Get Stripe configuration
+            from app.services.stripe_service import StripeService
+
+            if not StripeService.is_configured():
+                logging.warning("Stripe service not configured in get_data")
+                return {
+                    "stripe_configured": False,
+                    "stripe_public_key": "",
+                    "get_payment_intent_url": "",
+                    "payment_return_url": "",
+                    "invitation_code": "",
+                    "error_message": "Stripe service not configured"
+                }
+
+            # Get Stripe publishable key from settings
+            stripe_publishable_key = settings_dict.get("stripe_publishable_key", "")
+            if not stripe_publishable_key:
+                # Fallback: try to get from environment
+                import os
+                stripe_publishable_key = os.getenv("STRIPE_PUBLISHABLE_KEY", "")
+
+            # If still empty, we have a problem - need to log and fail
+            if not stripe_publishable_key:
+                logging.error("Stripe publishable key not found in settings or environment!")
+                return {
+                    "stripe_configured": False,
+                    "stripe_public_key": "",
+                    "get_payment_intent_url": "",
+                    "payment_return_url": "",
+                    "invitation_code": "",
+                    "error_message": "Stripe publishable key not configured. Please check admin settings."
+                }
+
+            # Get invitation code from session
+            from app.services.invite_code_manager import InviteCodeManager
+            invitation_code = ""
+            get_payment_intent_url = "/wizard/get-payment-intent"
+            payment_return_url = "/wizard/payment-complete"
+
+            if has_request_context():
+                invitation_code = InviteCodeManager.get_invite_code() or ""
+                # Debug: also check session directly
+                if not invitation_code:
+                    invitation_code = session.get("wizard_access", "")
+
+                get_payment_intent_url = url_for("wizard.get_payment_intent", _external=False)
+                payment_return_url = url_for("wizard.payment_complete", _external=True)
+
+            data = {
+                "stripe_configured": True,
+                "stripe_public_key": stripe_publishable_key,
+                "get_payment_intent_url": get_payment_intent_url,
+                "payment_return_url": payment_return_url,
+                "invitation_code": invitation_code,
+                "error_message": ""
+            }
+
+            logging.info(f"Stripe widget data: configured=True, public_key={stripe_publishable_key[:10] if stripe_publishable_key else 'EMPTY'}..., endpoint={get_payment_intent_url}, code={invitation_code[:10] if invitation_code else 'EMPTY'}...")
+            return data
+
+        except Exception as e:
+            import logging
+            logging.error(f"Error configuring Stripe Checkout: {e}", exc_info=True)
+            return {
+                "stripe_configured": False,
+                "stripe_public_key": "",
+                "get_payment_intent_url": "",
+                "payment_return_url": "",
+                "invitation_code": "",
+                "error_message": str(e)
+            }
+
+
 # Widget registry
 WIDGET_REGISTRY = {
     "recently_added_media": RecentlyAddedMediaWidget(),
     "button": ButtonWidget(),
+    "stripe_payment": StripePaymentWidget(),
 }
 
 

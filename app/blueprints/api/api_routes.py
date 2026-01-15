@@ -67,6 +67,7 @@ libraries_ns = api.namespace("libraries", description="Library information opera
 servers_ns = api.namespace("servers", description="Server information operations")
 api_keys_ns = api.namespace("api-keys", description="API key management operations")
 admins_ns = api.namespace("admins", description="Admin management operations")
+stripe_ns = api.namespace("stripe", description="Stripe sync operations")
 
 
 def require_api_key(f):
@@ -1100,3 +1101,180 @@ class UserResetPasswordResource(Resource):
             logger.error("Error creating reset token for user %s: %s", user_id, str(e))
             logger.error(traceback.format_exc())
             return {"error": "Internal server error"}, 500
+
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# Stripe Namespace Endpoints
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+
+@stripe_ns.route("/sync/customers")
+class StripeSyncCustomers(Resource):
+    """Stripe customer synchronization endpoint."""
+
+    @require_api_key
+    @api.doc(
+        security="apikey",
+        description="Trigger manual sync of Stripe customers to PostgreSQL",
+        responses={
+            200: "Sync completed successfully",
+            401: "Unauthorized - Invalid or missing API key",
+            503: "Stripe service not configured",
+            500: "Internal server error",
+        },
+    )
+    def post(self):
+        """Manually trigger Stripe customer synchronization."""
+        from app.services.stripe_service import StripeService
+
+        try:
+            if not StripeService.is_configured():
+                logger.warning("Stripe sync requested but service not configured")
+                return {"error": "Stripe service not configured"}, 503
+
+            sync_engine = StripeService.get_instance()
+            if not sync_engine:
+                return {"error": "Stripe sync engine not initialized"}, 500
+
+            # Trigger customer sync
+            result = sync_engine.sync_customers()
+
+            logger.info("Stripe customer sync completed via API")
+            return {"message": "Customer sync completed", "result": result}, 200
+
+        except Exception as e:
+            logger.error("Error during Stripe customer sync: %s", str(e))
+            logger.error(traceback.format_exc())
+            return {"error": "Sync failed", "details": str(e)}, 500
+
+
+@stripe_ns.route("/sync/subscriptions")
+class StripeSyncSubscriptions(Resource):
+    """Stripe subscription synchronization endpoint."""
+
+    @require_api_key
+    @api.doc(
+        security="apikey",
+        description="Trigger manual sync of Stripe subscriptions to PostgreSQL",
+        responses={
+            200: "Sync completed successfully",
+            401: "Unauthorized - Invalid or missing API key",
+            503: "Stripe service not configured",
+            500: "Internal server error",
+        },
+    )
+    def post(self):
+        """Manually trigger Stripe subscription synchronization."""
+        from app.services.stripe_service import StripeService
+
+        try:
+            if not StripeService.is_configured():
+                logger.warning("Stripe sync requested but service not configured")
+                return {"error": "Stripe service not configured"}, 503
+
+            sync_engine = StripeService.get_instance()
+            if not sync_engine:
+                return {"error": "Stripe sync engine not initialized"}, 500
+
+            # Trigger subscription sync
+            result = sync_engine.sync_subscriptions()
+
+            logger.info("Stripe subscription sync completed via API")
+            return {"message": "Subscription sync completed", "result": result}, 200
+
+        except Exception as e:
+            logger.error("Error during Stripe subscription sync: %s", str(e))
+            logger.error(traceback.format_exc())
+            return {"error": "Sync failed", "details": str(e)}, 500
+
+
+@stripe_ns.route("/sync/backfill")
+class StripeSyncBackfill(Resource):
+    """Stripe full backfill synchronization endpoint."""
+
+    @require_api_key
+    @api.doc(
+        security="apikey",
+        description="Trigger full backfill of all Stripe data to PostgreSQL",
+        responses={
+            200: "Backfill completed successfully",
+            401: "Unauthorized - Invalid or missing API key",
+            503: "Stripe service not configured",
+            500: "Internal server error",
+        },
+    )
+    def post(self):
+        """Manually trigger full Stripe data backfill."""
+        from app.services.stripe_service import StripeService
+
+        try:
+            if not StripeService.is_configured():
+                logger.warning("Stripe backfill requested but service not configured")
+                return {"error": "Stripe service not configured"}, 503
+
+            sync_engine = StripeService.get_instance()
+            if not sync_engine:
+                return {"error": "Stripe sync engine not initialized"}, 500
+
+            # Trigger backfill
+            result = sync_engine.sync_backfill()
+
+            logger.info("Stripe backfill completed via API")
+            return {"message": "Backfill completed", "result": result}, 200
+
+        except Exception as e:
+            logger.error("Error during Stripe backfill: %s", str(e))
+            logger.error(traceback.format_exc())
+            return {"error": "Backfill failed", "details": str(e)}, 500
+
+
+@stripe_ns.route("/status")
+class StripeStatus(Resource):
+    """Stripe service status endpoint."""
+
+    @require_api_key
+    @api.doc(
+        security="apikey",
+        description="Get Stripe service configuration status",
+        responses={
+            200: "Status retrieved successfully",
+            401: "Unauthorized - Invalid or missing API key",
+        },
+    )
+    def get(self):
+        """Get Stripe service status and configuration."""
+        from app.models import Settings
+        from app.services.stripe_service import StripeService
+
+        try:
+            is_configured = StripeService.is_configured()
+
+            # Get configuration details (without exposing secrets)
+            schema_setting = Settings.query.filter_by(key="stripe_schema").first()
+            webhook_endpoint_setting = Settings.query.filter_by(
+                key="stripe_webhook_endpoint"
+            ).first()
+
+            secret_key_configured = (
+                Settings.query.filter_by(key="stripe_secret_key").first() is not None
+            )
+            webhook_secret_configured = (
+                Settings.query.filter_by(key="stripe_webhook_secret").first()
+                is not None
+            )
+
+            return {
+                "configured": is_configured,
+                "secret_key_configured": secret_key_configured,
+                "webhook_secret_configured": webhook_secret_configured,
+                "schema": schema_setting.value if schema_setting else "stripe",
+                "webhook_endpoint": (
+                    webhook_endpoint_setting.value
+                    if webhook_endpoint_setting
+                    else "/webhooks/stripe"
+                ),
+            }, 200
+
+        except Exception as e:
+            logger.error("Error getting Stripe status: %s", str(e))
+            return {"error": "Failed to get status", "details": str(e)}, 500

@@ -132,6 +132,8 @@ def create_invite(form: Any) -> Invitation:
             and str(form.get("max_active_sessions")).strip().isdigit()
             else None
         ),
+        # Stripe payment integration
+        requires_payment=bool(form.get("requires_payment")),
     )
     db.session.add(invite)
     db.session.flush()  # so invite.id exists, but not yet committed

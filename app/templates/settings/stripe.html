@@ -1,0 +1,651 @@
+<section class="animate__animated animate__fadeIn">
+  <div class="p-6 space-y-8">
+
+    <!-- Connect to Stripe Section -->
+    <div class="w-full">
+      <div class="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700">
+        <div class="p-6">
+          <h2 class="text-xl font-semibold text-gray-900 dark:text-white mb-6">{{ _("Connect to Stripe") }}</h2>
+
+          <div class="space-y-4">
+            <!-- Stripe Account Row -->
+            <div class="flex items-start gap-4">
+              <label class="text-sm font-medium text-gray-900 dark:text-white pt-2.5 w-32">{{ _("Stripe Account") }}</label>
+              <div class="flex-1 relative">
+                <input type="text"
+                       id="stripe_secret_key"
+                       value="{{ stripe_settings.get('stripe_secret_key', '') }}"
+                       placeholder="sk_test_... or sk_live_..."
+                       {% if stripe_settings.get('stripe_connected') %}disabled{% endif %}
+                       class="bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-primary focus:border-primary block w-full p-2.5 pr-10 dark:bg-gray-700 dark:border-gray-600 dark:placeholder-gray-400 dark:text-white font-mono disabled:opacity-50 disabled:cursor-not-allowed">
+              </div>
+            </div>
+
+            <!-- Connect/Disconnect Button Row -->
+            <div class="flex items-center gap-4">
+              <div class="w-32"></div> <!-- Spacer to align with input -->
+              <div class="flex items-center gap-3">
+                {% if stripe_settings.get('stripe_connected') %}
+                  <button type="button"
+                          id="disconnect_btn"
+                          onclick="disconnectStripe()"
+                          class="px-4 py-2 bg-red-600 hover:bg-red-700 text-white font-medium rounded-lg text-sm transition-colors">
+                    {{ _("Disconnect") }}
+                  </button>
+                  <span class="text-sm text-gray-600 dark:text-gray-400">
+                    {{ _("Connected to") }} <strong class="text-gray-900 dark:text-white">{{ stripe_settings.get('stripe_account_name', stripe_settings.get('stripe_account_id', 'Stripe')) }}</strong>
+                  </span>
+                {% else %}
+                  <button type="button"
+                          id="connect_btn"
+                          onclick="connectStripe()"
+                          class="px-4 py-2 bg-primary hover:bg-primary/90 text-white font-medium rounded-lg text-sm transition-colors">
+                    {{ _("Connect") }}
+                  </button>
+                  <span id="connection_error" class="text-sm text-red-600 hidden"></span>
+                {% endif %}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Subscription Tiers Section -->
+    <div class="w-full" id="subscription-tiers-section">
+      <div class="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700">
+        <div class="p-6">
+          <div class="flex items-center justify-between mb-6">
+            <h2 class="text-xl font-semibold text-gray-900 dark:text-white">{{ _("Subscription Tiers") }}</h2>
+            <button type="button"
+                    id="backfill-tiers-btn"
+                    onclick="backfillProductsForTiers()"
+                    class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors disabled:opacity-50 text-sm">
+              {{ _("Sync from Stripe") }}
+            </button>
+          </div>
+
+          <p class="text-sm text-gray-600 dark:text-gray-400 mb-4">
+            {{ _("Map Stripe products to Wizarr libraries. Drag to reorder tiers.") }}
+          </p>
+
+          <!-- Alerts -->
+          <div id="tiers-error-alert" class="hidden mb-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4">
+            <p id="tiers-error-text" class="text-red-800 dark:text-red-200"></p>
+          </div>
+
+          <div id="tiers-success-alert" class="hidden mb-4 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg p-4">
+            <p id="tiers-success-text" class="text-green-800 dark:text-green-200"></p>
+          </div>
+
+          <!-- Loading State -->
+          <div id="tiers-loading" class="flex items-center justify-center py-8">
+            <div class="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600"></div>
+            <span class="ml-2 text-gray-600 dark:text-gray-400">{{ _("Loading tiers...") }}</span>
+          </div>
+
+          <!-- Tiers Table -->
+          <div id="tiers-table-container" class="hidden overflow-x-auto">
+            <table class="w-full border-collapse">
+              <thead>
+                <tr class="border-b border-gray-200 dark:border-gray-700">
+                  <th class="text-left py-3 px-4 w-8">⋮</th>
+                  <th class="text-left py-3 px-4">{{ _("Stripe Product") }}</th>
+                  <th class="text-left py-3 px-4">{{ _("Tier Name") }}</th>
+                  <th class="text-left py-3 px-4">{{ _("Libraries") }}</th>
+                  <th class="text-center py-3 px-4 w-32">{{ _("Inherit?") }}</th>
+                  <th class="text-center py-3 px-4 w-16">{{ _("Save") }}</th>
+                </tr>
+              </thead>
+              <tbody id="tiers-tbody" class="divide-y divide-gray-200 dark:divide-gray-700">
+                <!-- Rows populated by JS -->
+              </tbody>
+            </table>
+          </div>
+
+          <!-- Empty State -->
+          <div id="tiers-empty-state" class="text-center py-8">
+            <p class="text-sm text-gray-500 dark:text-gray-400">{{ _("No Stripe products available. Connect to Stripe and sync products.") }}</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Stripe Webhook Section -->
+    <div class="w-full">
+      <div class="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700">
+        <div class="p-6">
+          <h2 class="text-xl font-semibold text-gray-900 dark:text-white mb-6">{{ _("Stripe Webhook") }}</h2>
+
+          <div id="webhook_rows" class="space-y-3 mb-4">
+            {% for webhook in stripe_settings.get('webhooks', []) %}
+            <div class="webhook-row flex items-center gap-3">
+              <input type="text"
+                     value="{{ webhook.endpoint }}"
+                     placeholder="/webhooks/stripe"
+                     class="webhook-endpoint bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-primary focus:border-primary p-2.5 dark:bg-gray-700 dark:border-gray-600 dark:placeholder-gray-400 dark:text-white font-mono flex-1">
+              <input type="text"
+                     value="{{ webhook.secret }}"
+                     placeholder="whsec_..."
+                     class="webhook-secret bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-primary focus:border-primary p-2.5 dark:bg-gray-700 dark:border-gray-600 dark:placeholder-gray-400 dark:text-white font-mono flex-1">
+              <button type="button"
+                      onclick="removeWebhookRow(this)"
+                      class="px-3 py-2 text-red-600 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                </svg>
+              </button>
+            </div>
+            {% endfor %}
+          </div>
+
+          <button type="button"
+                  id="add_webhook_btn"
+                  onclick="addWebhookRow()"
+                  class="px-4 py-2 bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-900 dark:text-white font-medium rounded-lg text-sm transition-colors">
+            {{ _("Add Webhook Endpoint") }}
+          </button>
+
+          <!-- Save Webhooks Button -->
+          <div class="mt-6 pt-6 border-t border-gray-200 dark:border-gray-700">
+            <button type="button"
+                    onclick="saveWebhooks()"
+                    class="px-6 py-3 bg-primary hover:bg-primary/90 text-white font-medium rounded-lg text-sm transition-colors">
+              <svg class="w-4 h-4 inline mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+              </svg>
+              {{ _("Save Webhook Settings") }}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</section>
+
+<!-- Tier Library Picker Modal (hidden, shown on demand) -->
+<div id="tier-library-modal" class="hidden fixed inset-0 z-50 bg-gray-500 bg-opacity-75 dark:bg-gray-900 dark:bg-opacity-80 flex items-center justify-center">
+  <div class="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-6 max-w-md w-full mx-4">
+    <h3 class="text-lg font-medium mb-4">{{ _("Select Libraries") }}</h3>
+    <div id="tier-library-list" class="space-y-2 max-h-64 overflow-y-auto mb-4">
+      <!-- Libraries populated by JS -->
+    </div>
+    <div class="flex gap-2 justify-end">
+      <button onclick="closeTierLibraryModal()"
+              class="px-4 py-2 text-gray-700 dark:text-gray-300 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700">
+        {{ _("Cancel") }}
+      </button>
+      <button onclick="saveTierLibrarySelection()"
+              class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg">
+        {{ _("Done") }}
+      </button>
+    </div>
+  </div>
+</div>
+
+<script src="{{ url_for('static', filename='js/sortable.min.js') }}"></script>
+
+<script>
+// Initialize tiers config when section becomes available
+document.addEventListener('DOMContentLoaded', () => {
+  const section = document.getElementById('subscription-tiers-section');
+  if (section) {
+    loadTiersConfiguration();
+  }
+});
+
+// Also watch for HTMX fragment loads
+document.addEventListener('htmx:afterSwap', () => {
+  const section = document.getElementById('subscription-tiers-section');
+  if (section) {
+    loadTiersConfiguration();
+  }
+});
+
+async function connectStripe() {
+  const apiKey = document.getElementById('stripe_secret_key').value.trim();
+  const errorSpan = document.getElementById('connection_error');
+  const connectBtn = document.getElementById('connect_btn');
+
+  if (!apiKey) {
+    errorSpan.textContent = '{{ _("Please enter a Stripe API key") }}';
+    errorSpan.classList.remove('hidden');
+    return;
+  }
+
+  connectBtn.disabled = true;
+  connectBtn.textContent = '{{ _("Connecting...") }}';
+  errorSpan.classList.add('hidden');
+
+  try {
+    const response = await fetch('{{ url_for("stripe_settings.test_stripe_connection") }}', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ api_key: apiKey })
+    });
+
+    const data = await response.json();
+
+    if (data.success) {
+      // Save the connection
+      const saveResponse = await fetch('{{ url_for("stripe_settings.connect_stripe") }}', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          api_key: apiKey,
+          account_id: data.account.account_id,
+          account_name: data.account.account_name
+        })
+      });
+
+      if (saveResponse.ok) {
+        // Reload the page to show connected state
+        window.location.reload();
+      } else {
+        throw new Error('Failed to save connection');
+      }
+    } else {
+      errorSpan.textContent = data.error || '{{ _("Failed to connect to Stripe") }}';
+      errorSpan.classList.remove('hidden');
+    }
+  } catch (error) {
+    errorSpan.textContent = '{{ _("Connection error. Please check your API key.") }}';
+    errorSpan.classList.remove('hidden');
+  } finally {
+    connectBtn.disabled = false;
+    connectBtn.textContent = '{{ _("Connect") }}';
+  }
+}
+
+async function disconnectStripe() {
+  if (!confirm('{{ _("Are you sure you want to disconnect from Stripe? This will disable the backfill service.") }}')) {
+    return;
+  }
+
+  try {
+    const response = await fetch('{{ url_for("stripe_settings.disconnect_stripe") }}', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      }
+    });
+
+    if (response.ok) {
+      window.location.reload();
+    }
+  } catch (error) {
+    alert('{{ _("Failed to disconnect") }}');
+  }
+}
+
+function addWebhookRow() {
+  const webhookRows = document.getElementById('webhook_rows');
+  const rowCount = webhookRows.querySelectorAll('.webhook-row').length;
+
+  if (rowCount >= 5) {
+    alert('{{ _("Maximum 5 webhook endpoints allowed") }}');
+    return;
+  }
+
+  const newRow = document.createElement('div');
+  newRow.className = 'webhook-row flex items-center gap-3';
+  newRow.innerHTML = `
+    <input type="text"
+           value="/webhooks/stripe"
+           placeholder="/webhooks/stripe"
+           class="webhook-endpoint bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-primary focus:border-primary p-2.5 dark:bg-gray-700 dark:border-gray-600 dark:placeholder-gray-400 dark:text-white font-mono flex-1">
+    <input type="text"
+           value=""
+           placeholder="whsec_..."
+           class="webhook-secret bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-primary focus:border-primary p-2.5 dark:bg-gray-700 dark:border-gray-600 dark:placeholder-gray-400 dark:text-white font-mono flex-1">
+    <button type="button"
+            onclick="removeWebhookRow(this)"
+            class="px-3 py-2 text-red-600 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300">
+      <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+      </svg>
+    </button>
+  `;
+
+  webhookRows.appendChild(newRow);
+}
+
+function removeWebhookRow(button) {
+  button.closest('.webhook-row').remove();
+}
+
+async function saveWebhooks() {
+  const rows = document.querySelectorAll('.webhook-row');
+  const webhooks = [];
+
+  rows.forEach(row => {
+    const endpoint = row.querySelector('.webhook-endpoint').value.trim();
+    const secret = row.querySelector('.webhook-secret').value.trim();
+
+    if (endpoint && secret) {
+      webhooks.push({ endpoint, secret });
+    }
+  });
+
+  try {
+    const response = await fetch('{{ url_for("stripe_settings.save_webhooks") }}', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ webhooks })
+    });
+
+    if (response.ok) {
+      alert('{{ _("Webhook settings saved successfully") }}');
+    } else {
+      alert('{{ _("Failed to save webhook settings") }}');
+    }
+  } catch (error) {
+    alert('{{ _("Error saving webhook settings") }}');
+  }
+}
+
+// Subscription Tiers Management
+if (typeof tiersConfig === 'undefined') {
+  window.tiersConfig = { products: [], libraries: [] };
+  window.currentTierProductId = null;
+  window.currentTierEntitlements = [];
+  window.tiersSortableInstance = null;
+}
+
+async function loadTiersConfiguration() {
+  try {
+    const response = await fetch('/api/settings/subscription-tiers/stripe-config');
+    if (!response.ok) {
+      const text = await response.text();
+      console.error('API error:', response.status, text);
+      throw new Error('{{ _("Failed to load tiers configuration") }}');
+    }
+
+    tiersConfig = await response.json();
+    console.log('Tiers config loaded:', tiersConfig);
+    renderTiers();
+  } catch (err) {
+    console.error('Error loading tiers:', err);
+    showTiersError(err.message);
+  }
+}
+
+function renderTiers() {
+  const tbody = document.getElementById('tiers-tbody');
+  const tableContainer = document.getElementById('tiers-table-container');
+  const emptyState = document.getElementById('tiers-empty-state');
+  const loading = document.getElementById('tiers-loading');
+
+  loading.classList.add('hidden');
+
+  if (tiersConfig.products.length === 0) {
+    tableContainer.classList.add('hidden');
+    emptyState.classList.remove('hidden');
+    return;
+  }
+
+  tbody.innerHTML = '';
+  emptyState.classList.add('hidden');
+  tableContainer.classList.remove('hidden');
+
+  tiersConfig.products.forEach((product) => {
+    const row = createTierRow(product);
+    tbody.appendChild(row);
+  });
+
+  initTiersSortable();
+}
+
+function createTierRow(product) {
+  const row = document.createElement('tr');
+  row.className = 'hover:bg-gray-50 dark:hover:bg-gray-900/50 tier-row';
+  row.dataset.productId = product.stripe_product_id;
+
+  row.innerHTML = `
+    <td class="py-4 px-4 cursor-move text-gray-400 tier-drag-handle">⋮⋮</td>
+    <td class="py-4 px-4">
+      <div class="font-medium">${escapeHtmlTiers(product.stripe_product_name)}</div>
+      <div class="text-xs text-gray-500 dark:text-gray-400">${escapeHtmlTiers(product.stripe_product_id)}</div>
+    </td>
+    <td class="py-4 px-4">
+      <input type="text"
+             value="${escapeHtmlTiers(product.tier_name)}"
+             placeholder="{{ _('Plan name') }}"
+             class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 text-sm tier-name-input" />
+    </td>
+    <td class="py-4 px-4">
+      <button type="button"
+              onclick="openTierLibraryModal(this)"
+              class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-left text-gray-900 dark:text-gray-100 text-sm flex items-center justify-between tier-select-btn">
+        <span class="tier-count">${product.entitlements.length} {{ _('selected') }}</span>
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 14l-7 7m0 0l-7-7m7 7V3" />
+        </svg>
+      </button>
+      <div class="mt-2 flex flex-wrap gap-2 tier-tags">
+        ${product.entitlements.map(ent => `
+          <span class="inline-block px-2 py-1 bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-200 text-xs rounded">
+            ${escapeHtmlTiers(getTierLibraryName(ent.resource_id))}
+            <button type="button" class="ml-1 font-bold hover:text-blue-600"
+                    onclick="removeTierTag(event, '${product.stripe_product_id}', '${ent.resource_id}')">×</button>
+          </span>
+        `).join('')}
+      </div>
+    </td>
+    <td class="py-4 px-4 text-center">
+      <label class="flex items-center justify-center">
+        <input type="checkbox"
+               ${product.parent_tier_id !== null ? 'checked' : ''}
+               ${product.tier_level === 1 ? 'disabled' : ''}
+               class="rounded tier-inherit-checkbox"
+               data-tier-level="${product.tier_level}" />
+      </label>
+    </td>
+    <td class="py-4 px-4 text-center">
+      <button type="button"
+              onclick="saveTier(this)"
+              class="px-3 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors disabled:opacity-50 text-sm tier-save-btn">
+        {{ _('Save') }}
+      </button>
+    </td>
+  `;
+
+  return row;
+}
+
+function initTiersSortable() {
+  const tbody = document.getElementById('tiers-tbody');
+
+  if (tiersSortableInstance) {
+    tiersSortableInstance.destroy();
+  }
+
+  tiersSortableInstance = Sortable.create(tbody, {
+    handle: '.tier-drag-handle',
+    animation: 200,
+    ghostClass: 'opacity-50',
+    onEnd: onTiersReorder
+  });
+}
+
+async function onTiersReorder() {
+  const rows = document.querySelectorAll('.tier-row');
+  const productIds = Array.from(rows).map(r => r.dataset.productId);
+
+  try {
+    const response = await fetch('/api/settings/subscription-tiers/stripe-config/reorder', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ product_ids: productIds })
+    });
+
+    if (!response.ok) throw new Error('{{ _("Reorder failed") }}');
+
+    rows.forEach((row, idx) => {
+      const tierLevel = idx + 1;
+      const inherit = row.querySelector('.tier-inherit-checkbox');
+      inherit.dataset.tierLevel = tierLevel;
+      inherit.disabled = tierLevel === 1;
+      if (tierLevel === 1) inherit.checked = false;
+    });
+
+    showTiersSuccess('{{ _("Order updated!") }}');
+  } catch (err) {
+    showTiersError(err.message);
+    loadTiersConfiguration();
+  }
+}
+
+function openTierLibraryModal(btn) {
+  const row = btn.closest('.tier-row');
+  currentTierProductId = row.dataset.productId;
+  const product = tiersConfig.products.find(p => p.stripe_product_id === currentTierProductId);
+  currentTierEntitlements = product.entitlements.map(e => e.resource_id);
+
+  const libraryList = document.getElementById('tier-library-list');
+  libraryList.innerHTML = '';
+
+  tiersConfig.libraries.forEach(lib => {
+    const label = document.createElement('label');
+    label.className = 'flex items-center py-2 px-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded cursor-pointer';
+    label.innerHTML = `
+      <input type="checkbox" class="rounded tier-library-checkbox" data-key="${escapeHtmlTiers(lib.key)}"
+             ${currentTierEntitlements.includes(lib.key) ? 'checked' : ''} />
+      <span class="ml-2 flex-1 text-sm">
+        <div>${escapeHtmlTiers(lib.name)}</div>
+        <div class="text-xs text-gray-500 dark:text-gray-400">${escapeHtmlTiers(lib.server_name)}</div>
+      </span>
+    `;
+    libraryList.appendChild(label);
+  });
+
+  document.getElementById('tier-library-modal').classList.remove('hidden');
+}
+
+function closeTierLibraryModal() {
+  document.getElementById('tier-library-modal').classList.add('hidden');
+}
+
+function saveTierLibrarySelection() {
+  const checkboxes = document.querySelectorAll('.tier-library-checkbox:checked');
+  currentTierEntitlements = Array.from(checkboxes).map(cb => cb.dataset.key);
+  closeTierLibraryModal();
+
+  const row = document.querySelector(`[data-product-id="${currentTierProductId}"]`);
+  row.querySelector('.tier-count').textContent = `${currentTierEntitlements.length} {{ _('selected') }}`;
+
+  const tagsContainer = row.querySelector('.tier-tags');
+  tagsContainer.innerHTML = currentTierEntitlements.map(key => `
+    <span class="inline-block px-2 py-1 bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-200 text-xs rounded">
+      ${escapeHtmlTiers(getTierLibraryName(key))}
+      <button type="button" class="ml-1 font-bold hover:text-blue-600"
+              onclick="removeTierTag(event, '${currentTierProductId}', '${key}')">×</button>
+    </span>
+  `).join('');
+}
+
+function removeTierTag(event, productId, libraryKey) {
+  event.preventDefault();
+  event.stopPropagation();
+
+  if (currentTierProductId === productId) {
+    currentTierEntitlements = currentTierEntitlements.filter(k => k !== libraryKey);
+  }
+
+  const row = document.querySelector(`[data-product-id="${productId}"]`);
+  row.querySelector('.tier-count').textContent = `${row.querySelectorAll('.tier-tags span').length - 1} {{ _('selected') }}`;
+
+  event.target.closest('span').remove();
+}
+
+async function saveTier(btn) {
+  const row = btn.closest('.tier-row');
+  const productId = row.dataset.productId;
+  const tierName = row.querySelector('.tier-name-input').value;
+  const inheritCheckbox = row.querySelector('.tier-inherit-checkbox');
+
+  btn.disabled = true;
+  btn.textContent = '...';
+
+  try {
+    const response = await fetch('/api/settings/subscription-tiers/stripe-config/update-entitlements', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        stripe_product_id: productId,
+        tier_name: tierName,
+        library_keys: currentTierEntitlements,
+        inherit_from_previous: inheritCheckbox.checked
+      })
+    });
+
+    if (!response.ok) {
+      const data = await response.json();
+      throw new Error(data.error || '{{ _("Save failed") }}');
+    }
+
+    showTiersSuccess(`{{ _("Saved!") }}`);
+  } catch (err) {
+    showTiersError(err.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '{{ _("Save") }}';
+  }
+}
+
+async function backfillProductsForTiers() {
+  const btn = document.getElementById('backfill-tiers-btn');
+  btn.disabled = true;
+  btn.textContent = '{{ _("Syncing...") }}';
+
+  try {
+    const response = await fetch('/api/settings/subscription-tiers/stripe-config/backfill-products', {
+      method: 'POST'
+    });
+
+    if (!response.ok) {
+      const data = await response.json();
+      throw new Error(data.error || '{{ _("Sync failed") }}');
+    }
+
+    showTiersSuccess('{{ _("Products synced successfully!") }}');
+    await loadTiersConfiguration();
+  } catch (err) {
+    showTiersError(err.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '{{ _("Sync from Stripe") }}';
+  }
+}
+
+function getTierLibraryName(libraryKey) {
+  const lib = tiersConfig.libraries.find(l => l.key === libraryKey);
+  return lib ? lib.name : libraryKey;
+}
+
+function showTiersError(msg) {
+  const alert = document.getElementById('tiers-error-alert');
+  document.getElementById('tiers-error-text').textContent = msg;
+  alert.classList.remove('hidden');
+  setTimeout(() => alert.classList.add('hidden'), 5000);
+}
+
+function showTiersSuccess(msg) {
+  const alert = document.getElementById('tiers-success-alert');
+  document.getElementById('tiers-success-text').textContent = msg;
+  alert.classList.remove('hidden');
+  setTimeout(() => alert.classList.add('hidden'), 5000);
+}
+
+function escapeHtmlTiers(text) {
+  const map = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' };
+  return text.replace(/[&<>"']/g, m => map[m]);
+}
+</script>

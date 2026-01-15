@@ -1,5 +1,4 @@
 services:
-  # PostgreSQL database - shared by Wizarr and Stripe Sync Engine
   postgres:
     image: postgres:17
     container_name: postgres
@@ -20,48 +19,29 @@ services:
       retries: 5
     restart: unless-stopped
 
-  # Stripe Sync Engine - syncs Stripe data to 'stripe' schema
-  stripe-sync:
-    image: supabase/stripe-sync-engine:latest
-    container_name: stripe-sync
-    environment:
-      # PostgreSQL connection targeting the 'stripe' schema
-      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/postgres?options=-c%20search_path%3Dstripe
-      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY}  # Required for active sync/backfill
-      STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET}  # Required for webhook validation
-      API_KEY: ${STRIPE_SYNC_API_KEY:-test-key}  # API key for admin endpoints (backfilling, etc.)
-      # Server configuration
-      PORT: 3000
-      DOTENV_QUIET: true
-    ports:
-      - "3000:3000"
-    depends_on:
-      postgres:
-        condition: service_healthy
-    restart: unless-stopped
-
-  # Wizarr application
   wizarr:
     build: .
     container_name: wizarr
     environment:
       # Database configuration
       DATABASE_URL: postgresql://postgres:postgres@postgres:5432/postgres
-      # Wizarr configuration
+
+      # Wizarr app configuration
       TZ: ${TZ:-UTC}
       FLASK_ENV: production
       # Optional: Enable scheduler for development testing
       # WIZARR_ENABLE_SCHEDULER: "true"
       DOTENV_QUIET: true
+      # Unified logging level for Python, Gunicorn, and debug output
+      # Valid values: DEBUG, INFO, WARNING, ERROR, CRITICAL
+      LOG_LEVEL: DEBUG
     ports:
       - "5690:5690"
     volumes:
-      - wizarr_data:/data/database  # For secrets, sessions, etc.
+      - wizarr_data:/data/database
     depends_on:
       postgres:
         condition: service_healthy
-      stripe-sync:
-        condition: service_started
     restart: unless-stopped
 
 volumes:

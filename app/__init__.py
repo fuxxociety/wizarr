@@ -19,7 +19,7 @@ def create_app(config_object=DevelopmentConfig):
 
     if show_startup:
         logger.welcome(os.getenv("APP_VERSION", "dev"))
-        logger.start_sequence(total_steps=10)
+        logger.start_sequence(total_steps=11)
 
     # Step 1: Configure logging
     if show_startup:
@@ -135,7 +135,25 @@ def create_app(config_object=DevelopmentConfig):
             logger.step("Scanning media server libraries", "📚")
             logger.info("Skipped during migrations")
 
-    # Step 9: Initialize Plus features if enabled
+    # Step 9: Initialize Stripe sync service if configured
+    if show_startup:
+        logger.step("Initializing Stripe sync service", "💳")
+
+    try:
+        from .services.stripe_service import StripeService
+
+        stripe_initialized = StripeService.initialize(app)
+
+        if show_startup:
+            if stripe_initialized:
+                logger.success("Stripe sync service initialized")
+            else:
+                logger.info("Stripe sync service not configured")
+    except Exception as exc:
+        if show_startup:
+            logger.warning(f"Stripe sync service initialization failed: {exc}")
+
+    # Step 10: Initialize Plus features if enabled
     if show_startup:
         logger.step("Checking for Plus features", "⭐")
 
@@ -166,7 +184,7 @@ def create_app(config_object=DevelopmentConfig):
     elif show_startup:
         logger.info("Plus features disabled")
 
-    # Step 10: Show scheduler status and complete startup
+    # Step 11: Show scheduler status and complete startup
     if show_startup:
         logger.step("Finalizing application setup", "✨")
 
