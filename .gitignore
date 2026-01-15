@@ -1,5 +1,9 @@
 # .gitignore
+.git-rewrite/
+.git-rewrite
 .gitignore
+.vscode
+
 *.mo
 *.pot   # keep this out too; we generate it automatically
 
@@ -431,3 +435,6 @@ tests/test-media/**/*.mp3
 
 # Internal documentation (AI-generated, not for version control)
 docs-internal/
+n u l 
+ 
+ 
